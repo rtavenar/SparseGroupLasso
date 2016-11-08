@@ -1,7 +1,7 @@
 # Sparse-Group Lasso
 
 This code is my implementation (in Python) of the methods presented in the paper:
-> A Sparse-group Lasso
+> A Sparse-group Lasso.
 > Noah Simon, Jerome Friedman, Trevor Hastie, Rob Tibshirani
 > <http://www.stanford.edu/~hastie/Papers/SGLpaper.pdf>
 

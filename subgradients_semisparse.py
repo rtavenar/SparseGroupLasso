@@ -1,5 +1,5 @@
 import numpy
-from utils import S, norm_non0
+from utils import S, norm_non0, discard_group
 
 __author__ = 'Romain Tavenard romain.tavenard[at]univ-rennes2.fr'
 
@@ -27,14 +27,11 @@ class SGL:
             for gr in range(n_groups):
                 # 1- Should the group be zero-ed out?
                 indices_group_k = self.groups == gr
-                X_k = X[:, indices_group_k]
-                r_no_k = y - numpy.dot(X, self.coef_) + numpy.dot(X_k, self.coef_[indices_group_k])
-                norm_2 = numpy.linalg.norm(S(numpy.dot(X_k.T, r_no_k) / n, alpha_lambda[indices_group_k]))
-                p_l = numpy.sqrt(numpy.sum(indices_group_k))
-                if norm_2 <= (1 - self.alpha) * self.lbda * p_l:
+                if discard_group(X, y, self.coef_, self.alpha, self.lbda, alpha_lambda, indices_group_k):
                     self.coef_[indices_group_k] = 0.
                 else:
                     # 2- If the group is not zero-ed out, update each component
+                    p_l = numpy.sqrt(numpy.sum(indices_group_k))
                     for i in range(d):
                         if self.groups[i] == gr:
                             norm2_beta_k = norm_non0(self.coef_[indices_group_k])
