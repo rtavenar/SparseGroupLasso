@@ -49,3 +49,9 @@ class SGL:
             if numpy.linalg.norm(beta_old - self.coef_) / norm_non0(self.coef_) < self.rtol:
                 break
         return self
+
+    def predict(self, X):
+        return numpy.dot(X, self.coef_)
+
+    def fit_predict(self, X, y):
+        return self.fit(X, y).predict(X)
