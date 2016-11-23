@@ -16,16 +16,19 @@ for i in range(d):
     if i % 2 != 0:
         ind_sparse[i] = 1
 
-y = numpy.dot(X, secret_beta)
+y = 1. / (1. + numpy.exp(numpy.dot(X, secret_beta)))
+#print(y)
+#y[y >= 0.5] = 1.
+#y[y < 0.5] = 0.
 
 #model = subgradients.SGL(groups=groups, alpha=0., lbda=0.1)
 #model = subgradients_semisparse.SGL(groups=groups, alpha=0.1, lbda=0.1, ind_sparse=ind_sparse)
 #model = blockwise_descent.SGL(groups=groups, alpha=0., lbda=0.1)
-model = blockwise_descent_semisparse.SGL(groups=groups, alpha=0., lbda=0.1, ind_sparse=ind_sparse)
+model = blockwise_descent_semisparse.SGL_LogisticRegression(groups=groups, alpha=0., lbda=0.1, ind_sparse=ind_sparse, max_iter_outer=500)
 
 model.fit(X, y)
 beta_hat = model.coef_
 
 print(numpy.linalg.norm(secret_beta - beta_hat))
-print(beta_hat)
-print(secret_beta)
+for i, (betai_hat, betai) in enumerate(zip(beta_hat, secret_beta)):
+    print("Component %02d: %.4f | %.4f" % (i, betai_hat, betai))

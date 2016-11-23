@@ -6,8 +6,8 @@ __author__ = 'Romain Tavenard romain.tavenard[at]univ-rennes2.fr'
 
 class SGL:
     def __init__(self, groups, alpha, lbda, ind_sparse, max_iter=10000, rtol=1e-6):
-        self.ind_sparse = ind_sparse
-        self.groups = groups
+        self.ind_sparse = numpy.array(ind_sparse)
+        self.groups = numpy.array(groups)
         self.alpha = alpha
         self.lbda = lbda
         self.max_iter = max_iter
@@ -20,6 +20,7 @@ class SGL:
         # towards sparsity and 1 otherwise
         n_groups = numpy.max(self.groups) + 1
         n, d = X.shape
+        assert d == self.ind_sparse.shape[0]
         alpha_lambda = self.alpha * self.lbda * self.ind_sparse
         self.coef_ = numpy.random.randn(d)
         for iter in range(self.max_iter):
