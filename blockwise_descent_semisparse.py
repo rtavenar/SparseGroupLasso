@@ -71,7 +71,6 @@ class SGL:
             sqrt_p_l = numpy.sqrt(numpy.sum(indices_group))
             vec_A = numpy.abs(numpy.dot(X[:, indices_group].T, y)) / n
             if alpha > 0.:
-                # If no root found: this group can never be zero-ed out: min_lambda = numpy.inf
                 min_lambda = numpy.inf
                 breakpoints_lambda = numpy.unique(vec_A / alpha)
 
