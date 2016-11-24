@@ -1,4 +1,5 @@
 import numpy
+import matplotlib.pyplot as plt
 from utils import S, norm_non0, discard_group
 
 __author__ = 'Romain Tavenard romain.tavenard[at]univ-rennes2.fr'
@@ -59,6 +60,39 @@ class SGL:
     def fit_predict(self, X, y):
         return self.fit(X, y).predict(X)
 
+    @staticmethod
+    def lambda_max(X, y, groups, alpha):
+        # TODO: take ind_sparse into account in the computation + logistic regression variant
+        n, d = X.shape
+        n_groups = numpy.max(groups) + 1
+        max_min_lambda = -numpy.inf
+        for gr in range(n_groups):
+            indices_group = groups == gr
+            sqrt_p_l = numpy.sqrt(numpy.sum(indices_group))
+            vec_A = numpy.abs(numpy.dot(X[:, indices_group].T, y)) / n
+            if alpha > 0.:
+                # If no root found: this group can never be zero-ed out: min_lambda = numpy.inf
+                min_lambda = numpy.inf
+                breakpoints_lambda = numpy.unique(vec_A / alpha)
+
+                for l in breakpoints_lambda:
+                    indices_nonzero = vec_A >= alpha * l
+                    n_nonzero = numpy.sum(indices_nonzero)
+                    a = n_nonzero * alpha ** 2 - (sqrt_p_l * (1. - alpha)) ** 2
+                    b = - 2. * alpha * numpy.sum(vec_A[indices_nonzero])
+                    c = numpy.sum(vec_A[indices_nonzero] ** 2)
+                    delta = b ** 2 - 4 * a * c
+                    if delta >= 0.:
+                        candidate = (- b - numpy.sqrt(delta)) / (2 * a)
+                        if candidate <= l:
+                            min_lambda = candidate
+                            break
+            else:
+                min_lambda = numpy.linalg.norm(numpy.dot(X[:, indices_group].T, y) / n) / sqrt_p_l
+            if min_lambda > max_min_lambda:
+                max_min_lambda = min_lambda
+        return max_min_lambda
+
 
 class SGL_LogisticRegression(SGL):
     # Up to now, we assume that y is 0 or 1 (TODO: change that)
@@ -72,3 +106,28 @@ class SGL_LogisticRegression(SGL):
     @staticmethod
     def __logistic(X, beta):
         return 1. / (1. + numpy.exp(numpy.dot(X, beta)))
+
+
+if __name__ == "__main__":
+    n = 1000
+    d = 20
+    groups = numpy.array([0] * int(d / 2) + [1] * (d - int(d / 2)))
+    alpha = .5
+    epsilon = .001
+
+    numpy.random.seed(0)
+    X = numpy.random.randn(n, d)
+    secret_beta = numpy.random.randn(d)
+    ind_sparse = numpy.ones((d, ))
+    for i in range(d):
+        if groups[i] == 0:
+            secret_beta[i] = 0
+
+    y = numpy.dot(X, secret_beta)
+
+    lambda_max = SGL.lambda_max(X, y, groups=groups, alpha=alpha)
+    print(lambda_max)
+    for l in [lambda_max - epsilon, lambda_max + epsilon]:
+        model = SGL(groups=groups, alpha=alpha, lbda=l, ind_sparse=ind_sparse)
+        model.fit(X, y)
+        print(model.coef_)

@@ -26,6 +26,8 @@ model = blockwise_descent_semisparse.SGL(groups=groups, alpha=0., lbda=0.1, ind_
 model.fit(X, y)
 beta_hat = model.coef_
 
+model.lambda_max(X, y)
+
 print(numpy.linalg.norm(secret_beta - beta_hat))
 print(beta_hat)
 print(secret_beta)
