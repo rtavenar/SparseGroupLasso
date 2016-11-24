@@ -92,6 +92,11 @@ class SGL:
                 max_min_lambda = min_lambda
         return max_min_lambda
 
+    @staticmethod
+    def candidate_lambdas(X, y, groups, alpha, n_lambdas=5, lambda_min_ratio=.1):
+        l_max = SGL.lambda_max(X, y, groups=groups, alpha=alpha)
+        return numpy.logspace(numpy.log10(lambda_min_ratio * l_max), numpy.log10(l_max), num=n_lambdas)
+
 
 class SGL_LogisticRegression(SGL):
     # Up to now, we assume that y is 0 or 1 (TODO: change that)
@@ -129,4 +134,6 @@ if __name__ == "__main__":
     for l in [lambda_max - epsilon, lambda_max + epsilon]:
         model = SGL(groups=groups, alpha=alpha, lbda=l, ind_sparse=ind_sparse)
         model.fit(X, y)
-        print(model.coef_)
+        print(l, model.coef_)
+
+    print(SGL.candidate_lambdas(X, y, groups=groups, alpha=alpha))
