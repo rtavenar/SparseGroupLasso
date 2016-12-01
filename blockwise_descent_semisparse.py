@@ -1,6 +1,5 @@
 import numpy
-import matplotlib.pyplot as plt
-from utils import S, norm_non0, discard_group
+from utils import S, norm_non0
 
 __author__ = 'Romain Tavenard romain.tavenard[at]univ-rennes2.fr'
 
@@ -31,7 +30,7 @@ class SGL:
             for gr in range(n_groups):
                 # 1- Should the group be zero-ed out?
                 indices_group_k = self.groups == gr
-                if discard_group(X, y, self.coef_, self.alpha, self.lbda, alpha_lambda, indices_group_k):
+                if self.discard_group(X, y, indices_group_k):
                     self.coef_[indices_group_k] = 0.
                 else:
                     # 2- If the group is not zero-ed out, perform GD for the group
@@ -49,10 +48,36 @@ class SGL:
                 break
         return self
 
-    def _grad_l(self, X, y, indices_group):  # Linear Regression
+    def _grad_l(self, X, y, indices_group, group_zero=False):  # Linear Regression
+        if group_zero:
+            beta = self.coef_.copy()
+            beta[indices_group] = 0.
+        else:
+            beta = self.coef_
         n, d = X.shape
-        r = y - numpy.dot(X, self.coef_)
+        r = y - numpy.dot(X, beta)
         return - numpy.dot(X[:, indices_group].T, r) / n
+
+    def _unregularized_loss(self, X, y):
+        n, d = X.shape
+        return numpy.linalg.norm(y - numpy.dot(X, self.coef_)) ** 2 / (2 * n)
+
+    def _loss(self, X, y):
+        alpha_lambda = self.alpha * self.lbda * self.ind_sparse
+        reg_l1 = alpha_lambda * numpy.linalg.norm(self.coef_, ord=1)
+        s = 0
+        n_groups = numpy.max(self.groups) + 1
+        for gr in range(n_groups):
+            indices_group_k = self.groups == gr
+            s += numpy.sqrt(numpy.sum(indices_group_k)) * numpy.linalg.norm(self.coef_[indices_group_k])
+        reg_l2 = (1. - self.alpha) * self.lbda * s
+        return self._unregularized_loss(X, y) + reg_l2 + reg_l1
+
+    def discard_group(self, X, y, ind):
+        alpha_lambda = self.alpha * self.lbda * self.ind_sparse
+        norm_2 = numpy.linalg.norm(S(self._grad_l(X, y, ind, group_zero=True), alpha_lambda[ind]))
+        p_l = numpy.sqrt(numpy.sum(ind))
+        return norm_2 <= (1 - self.alpha) * self.lbda * p_l
 
     def predict(self, X):
         return numpy.dot(X, self.coef_)
@@ -61,11 +86,12 @@ class SGL:
         return self.fit(X, y).predict(X)
 
     @staticmethod
-    def lambda_max(X, y, groups, alpha):
-        # TODO: take ind_sparse into account in the computation + logistic regression variant
+    def lambda_max(X, y, groups, alpha, ind_sparse=None):
         n, d = X.shape
         n_groups = numpy.max(groups) + 1
         max_min_lambda = -numpy.inf
+        if ind_sparse is None:
+            ind_sparse = numpy.ones((d, ))
         for gr in range(n_groups):
             indices_group = groups == gr
             sqrt_p_l = numpy.sqrt(numpy.sum(indices_group))
@@ -76,9 +102,10 @@ class SGL:
 
                 for l in breakpoints_lambda:
                     indices_nonzero = vec_A >= alpha * l
-                    n_nonzero = numpy.sum(indices_nonzero)
-                    a = n_nonzero * alpha ** 2 - (sqrt_p_l * (1. - alpha)) ** 2
-                    b = - 2. * alpha * numpy.sum(vec_A[indices_nonzero])
+                    indices_nonzero_sparse = numpy.logical_and(indices_nonzero, ind_sparse[indices_group] > 0)
+                    n_nonzero_sparse = numpy.sum(indices_nonzero_sparse)
+                    a = n_nonzero_sparse * alpha ** 2 - (sqrt_p_l * (1. - alpha)) ** 2
+                    b = - 2. * alpha * numpy.sum(vec_A[indices_nonzero_sparse])
                     c = numpy.sum(vec_A[indices_nonzero] ** 2)
                     delta = b ** 2 - 4 * a * c
                     if delta >= 0.:
@@ -99,17 +126,67 @@ class SGL:
 
 
 class SGL_LogisticRegression(SGL):
-    # Up to now, we assume that y is 0 or 1 (TODO: change that)
-    def _grad_l(self, X, y, indices_group):
+    # Up to now, we assume that y is 0 or 1
+    def _unregularized_loss(self, X, y):  # = -1/n * log-likelihood
         n, d = X.shape
-        p_y0 = SGL_LogisticRegression.__logistic(X, self.coef_)
-        p_y1 = 1. - p_y0
-        return numpy.sum(X[:, indices_group] * (y + p_y1).reshape((n, 1)), axis=0) / n
+        x_beta = numpy.dot(X, self.coef_.T)
+        y_x_beta = x_beta * y.reshape((n, 1))
+        log_1_e_xb = numpy.log(1. + numpy.exp(x_beta))
+        return numpy.sum(log_1_e_xb - y_x_beta, axis=0) / n
 
+    def _grad_l(self, X, y, indices_group, group_zero=False):
+        if group_zero:
+            beta = self.coef_.copy()
+            beta[indices_group] = 0.
+        else:
+            beta = self.coef_
+        n, d = X.shape
+        exp_xb = numpy.exp(numpy.dot(X, beta))
+        ratio = exp_xb / (1. + exp_xb)
+        return numpy.sum(X[:, indices_group] * (ratio - y).reshape((n, 1)), axis=0) / n
+
+    def predict(self, X):
+        y = numpy.ones((X.shape[0]))
+        y[numpy.exp(numpy.dot(X, self.coef_)) < 1.] = 0.
+        return y
 
     @staticmethod
     def __logistic(X, beta):
         return 1. / (1. + numpy.exp(numpy.dot(X, beta)))
+
+    @staticmethod
+    def lambda_max(X, y, groups, alpha, ind_sparse=None):  # TODO
+        n, d = X.shape
+        n_groups = numpy.max(groups) + 1
+        max_min_lambda = -numpy.inf
+        if ind_sparse is None:
+            ind_sparse = numpy.ones((d, ))
+        for gr in range(n_groups):
+            indices_group = groups == gr
+            sqrt_p_l = numpy.sqrt(numpy.sum(indices_group))
+            vec_A = numpy.abs(numpy.dot(X[:, indices_group].T, y)) / n
+            if alpha > 0.:
+                min_lambda = numpy.inf
+                breakpoints_lambda = numpy.unique(vec_A / alpha)
+
+                for l in breakpoints_lambda:
+                    indices_nonzero = vec_A >= alpha * l
+                    indices_nonzero_sparse = numpy.logical_and(indices_nonzero, ind_sparse[indices_group] > 0)
+                    n_nonzero_sparse = numpy.sum(indices_nonzero_sparse)
+                    a = n_nonzero_sparse * alpha ** 2 - (sqrt_p_l * (1. - alpha)) ** 2
+                    b = - 2. * alpha * numpy.sum(vec_A[indices_nonzero_sparse])
+                    c = numpy.sum(vec_A[indices_nonzero] ** 2)
+                    delta = b ** 2 - 4 * a * c
+                    if delta >= 0.:
+                        candidate = (- b - numpy.sqrt(delta)) / (2 * a)
+                        if candidate <= l:
+                            min_lambda = candidate
+                            break
+            else:
+                min_lambda = numpy.linalg.norm(numpy.dot(X[:, indices_group].T, y) / n) / sqrt_p_l
+            if min_lambda > max_min_lambda:
+                max_min_lambda = min_lambda
+        return max_min_lambda
 
 
 if __name__ == "__main__":
@@ -122,14 +199,16 @@ if __name__ == "__main__":
     numpy.random.seed(0)
     X = numpy.random.randn(n, d)
     secret_beta = numpy.random.randn(d)
-    ind_sparse = numpy.ones((d, ))
+    ind_sparse = numpy.zeros((d, ))
     for i in range(d):
-        if groups[i] == 0:
+        if groups[i] == 0 or i % 2 == 0:
             secret_beta[i] = 0
+        if i % 2 != 0:
+            ind_sparse[i] = 1
 
     y = numpy.dot(X, secret_beta)
 
-    lambda_max = SGL.lambda_max(X, y, groups=groups, alpha=alpha)
+    lambda_max = SGL.lambda_max(X, y, groups=groups, alpha=alpha, ind_sparse=ind_sparse)
     print(lambda_max)
     for l in [lambda_max - epsilon, lambda_max + epsilon]:
         model = SGL(groups=groups, alpha=alpha, lbda=l, ind_sparse=ind_sparse)

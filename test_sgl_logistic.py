@@ -16,15 +16,14 @@ for i in range(d):
     if i % 2 != 0:
         ind_sparse[i] = 1
 
-y = 1. / (1. + numpy.exp(numpy.dot(X, secret_beta)))
-#print(y)
-#y[y >= 0.5] = 1.
-#y[y < 0.5] = 0.
+y = numpy.ones((n, ))
+y[numpy.exp(numpy.dot(X, secret_beta)) < 1.] = -1.
 
 #model = subgradients.SGL(groups=groups, alpha=0., lbda=0.1)
 #model = subgradients_semisparse.SGL(groups=groups, alpha=0.1, lbda=0.1, ind_sparse=ind_sparse)
 #model = blockwise_descent.SGL(groups=groups, alpha=0., lbda=0.1)
-model = blockwise_descent_semisparse.SGL_LogisticRegression(groups=groups, alpha=0., lbda=0.1, ind_sparse=ind_sparse, max_iter_outer=500)
+model = blockwise_descent_semisparse.SGL_LogisticRegression(groups=groups, alpha=0., lbda=0.1, ind_sparse=ind_sparse,
+                                                            max_iter_outer=500)
 
 model.fit(X, y)
 beta_hat = model.coef_
