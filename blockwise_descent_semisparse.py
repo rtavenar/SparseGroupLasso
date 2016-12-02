@@ -24,7 +24,7 @@ class SGL:
         assert d == self.ind_sparse.shape[0]
         alpha_lambda = self.alpha * self.lbda * self.ind_sparse
         self.coef_ = numpy.random.randn(d)
-        t = 1. / (numpy.linalg.norm(X, 2) ** 2)  # Heuristic (?) from fabianp's code
+        t = n / (numpy.linalg.norm(X, 2) ** 2)  # Adaptation of the heuristic (?) from fabianp's code
         for iter_outer in range(self.max_iter_outer):
             beta_old = self.coef_.copy()
             for gr in range(n_groups):
@@ -58,20 +58,21 @@ class SGL:
         r = y - numpy.dot(X, beta)
         return - numpy.dot(X[:, indices_group].T, r) / n
 
-    def _unregularized_loss(self, X, y):
+    def unregularized_loss(self, X, y):
         n, d = X.shape
         return numpy.linalg.norm(y - numpy.dot(X, self.coef_)) ** 2 / (2 * n)
 
-    def _loss(self, X, y):
+    def loss(self, X, y):
         alpha_lambda = self.alpha * self.lbda * self.ind_sparse
-        reg_l1 = alpha_lambda * numpy.linalg.norm(self.coef_, ord=1)
+        reg_l1 = numpy.linalg.norm(alpha_lambda * self.coef_, ord=1)
         s = 0
         n_groups = numpy.max(self.groups) + 1
         for gr in range(n_groups):
             indices_group_k = self.groups == gr
             s += numpy.sqrt(numpy.sum(indices_group_k)) * numpy.linalg.norm(self.coef_[indices_group_k])
         reg_l2 = (1. - self.alpha) * self.lbda * s
-        return self._unregularized_loss(X, y) + reg_l2 + reg_l1
+        #print(reg_l1, reg_l2, self.unregularized_loss(X, y))
+        return self.unregularized_loss(X, y) + reg_l2 + reg_l1
 
     def discard_group(self, X, y, ind):
         alpha_lambda = self.alpha * self.lbda * self.ind_sparse
@@ -127,10 +128,10 @@ class SGL:
 
 class SGL_LogisticRegression(SGL):
     # Up to now, we assume that y is 0 or 1
-    def _unregularized_loss(self, X, y):  # = -1/n * log-likelihood
+    def unregularized_loss(self, X, y):  # = -1/n * log-likelihood
         n, d = X.shape
-        x_beta = numpy.dot(X, self.coef_.T)
-        y_x_beta = x_beta * y.reshape((n, 1))
+        x_beta = numpy.dot(X, self.coef_)
+        y_x_beta = x_beta * y
         log_1_e_xb = numpy.log(1. + numpy.exp(x_beta))
         return numpy.sum(log_1_e_xb - y_x_beta, axis=0) / n
 
