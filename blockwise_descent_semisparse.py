@@ -48,13 +48,21 @@ class SGL:
                 break
         return self
 
-    def _grad_l(self, X, y, indices_group, group_zero=False):  # Linear Regression
+    def _grad_l(self, X, y, indices_group, group_zero=False):
         if group_zero:
             beta = self.coef_.copy()
             beta[indices_group] = 0.
         else:
             beta = self.coef_
         n, d = X.shape
+        r = y - numpy.dot(X, beta)
+        return - numpy.dot(X[:, indices_group].T, r) / n
+
+    @staticmethod
+    def _static_grad_l(X, y, indices_group, beta=None):
+        n, d = X.shape
+        if beta is None:
+            beta = numpy.zeros((d, ))
         r = y - numpy.dot(X, beta)
         return - numpy.dot(X[:, indices_group].T, r) / n
 
@@ -86,8 +94,8 @@ class SGL:
     def fit_predict(self, X, y):
         return self.fit(X, y).predict(X)
 
-    @staticmethod
-    def lambda_max(X, y, groups, alpha, ind_sparse=None):
+    @classmethod
+    def lambda_max(cls, X, y, groups, alpha, ind_sparse=None):
         n, d = X.shape
         n_groups = numpy.max(groups) + 1
         max_min_lambda = -numpy.inf
@@ -96,11 +104,11 @@ class SGL:
         for gr in range(n_groups):
             indices_group = groups == gr
             sqrt_p_l = numpy.sqrt(numpy.sum(indices_group))
-            vec_A = numpy.abs(numpy.dot(X[:, indices_group].T, y)) / n
+            vec_A = numpy.abs(cls._static_grad_l(X, y, indices_group))
             if alpha > 0.:
                 min_lambda = numpy.inf
                 breakpoints_lambda = numpy.unique(vec_A / alpha)
-
+                lower = 0.
                 for l in breakpoints_lambda:
                     indices_nonzero = vec_A >= alpha * l
                     indices_nonzero_sparse = numpy.logical_and(indices_nonzero, ind_sparse[indices_group] > 0)
@@ -110,19 +118,24 @@ class SGL:
                     c = numpy.sum(vec_A[indices_nonzero] ** 2)
                     delta = b ** 2 - 4 * a * c
                     if delta >= 0.:
-                        candidate = (- b - numpy.sqrt(delta)) / (2 * a)
-                        if candidate <= l:
-                            min_lambda = candidate
+                        candidate0 = (- b - numpy.sqrt(delta)) / (2 * a)
+                        candidate1 = (- b + numpy.sqrt(delta)) / (2 * a)
+                        if lower <= candidate0 <= l:
+                            min_lambda = candidate0
                             break
+                        elif lower <= candidate1 <= l:
+                            min_lambda = candidate1
+                            break
+                    lower = l
             else:
                 min_lambda = numpy.linalg.norm(numpy.dot(X[:, indices_group].T, y) / n) / sqrt_p_l
             if min_lambda > max_min_lambda:
                 max_min_lambda = min_lambda
         return max_min_lambda
 
-    @staticmethod
-    def candidate_lambdas(X, y, groups, alpha, n_lambdas=5, lambda_min_ratio=.1):
-        l_max = SGL.lambda_max(X, y, groups=groups, alpha=alpha)
+    @classmethod
+    def candidate_lambdas(cls, X, y, groups, alpha, ind_sparse=None, n_lambdas=5, lambda_min_ratio=.1):
+        l_max = cls.lambda_max(X, y, groups=groups, alpha=alpha, ind_sparse=ind_sparse)
         return numpy.logspace(numpy.log10(lambda_min_ratio * l_max), numpy.log10(l_max), num=n_lambdas)
 
 
@@ -135,8 +148,10 @@ class SGL_LogisticRegression(SGL):
         log_1_e_xb = numpy.log(1. + numpy.exp(x_beta))
         return numpy.sum(log_1_e_xb - y_x_beta, axis=0) / n
 
-    def _grad_l(self, X, y, indices_group, group_zero=False):
-        if group_zero:
+    def _grad_l(self, X, y, indices_group, group_zero=False, beta_zero=False):
+        if beta_zero:
+            beta = numpy.zeros(self.coef_.shape)
+        elif group_zero:
             beta = self.coef_.copy()
             beta[indices_group] = 0.
         else:
@@ -144,6 +159,16 @@ class SGL_LogisticRegression(SGL):
         n, d = X.shape
         exp_xb = numpy.exp(numpy.dot(X, beta))
         ratio = exp_xb / (1. + exp_xb)
+        return numpy.sum(X[:, indices_group] * (ratio - y).reshape((n, 1)), axis=0) / n
+
+    @staticmethod
+    def _static_grad_l(X, y, indices_group, beta=None):
+        n, d = X.shape
+        if beta is None:
+            ratio = .5
+        else:
+            exp_xb = numpy.exp(numpy.dot(X, beta))
+            ratio = exp_xb / (1. + exp_xb)
         return numpy.sum(X[:, indices_group] * (ratio - y).reshape((n, 1)), axis=0) / n
 
     def predict(self, X):
@@ -154,40 +179,6 @@ class SGL_LogisticRegression(SGL):
     @staticmethod
     def __logistic(X, beta):
         return 1. / (1. + numpy.exp(numpy.dot(X, beta)))
-
-    @staticmethod
-    def lambda_max(X, y, groups, alpha, ind_sparse=None):  # TODO
-        n, d = X.shape
-        n_groups = numpy.max(groups) + 1
-        max_min_lambda = -numpy.inf
-        if ind_sparse is None:
-            ind_sparse = numpy.ones((d, ))
-        for gr in range(n_groups):
-            indices_group = groups == gr
-            sqrt_p_l = numpy.sqrt(numpy.sum(indices_group))
-            vec_A = numpy.abs(numpy.dot(X[:, indices_group].T, y)) / n
-            if alpha > 0.:
-                min_lambda = numpy.inf
-                breakpoints_lambda = numpy.unique(vec_A / alpha)
-
-                for l in breakpoints_lambda:
-                    indices_nonzero = vec_A >= alpha * l
-                    indices_nonzero_sparse = numpy.logical_and(indices_nonzero, ind_sparse[indices_group] > 0)
-                    n_nonzero_sparse = numpy.sum(indices_nonzero_sparse)
-                    a = n_nonzero_sparse * alpha ** 2 - (sqrt_p_l * (1. - alpha)) ** 2
-                    b = - 2. * alpha * numpy.sum(vec_A[indices_nonzero_sparse])
-                    c = numpy.sum(vec_A[indices_nonzero] ** 2)
-                    delta = b ** 2 - 4 * a * c
-                    if delta >= 0.:
-                        candidate = (- b - numpy.sqrt(delta)) / (2 * a)
-                        if candidate <= l:
-                            min_lambda = candidate
-                            break
-            else:
-                min_lambda = numpy.linalg.norm(numpy.dot(X[:, indices_group].T, y) / n) / sqrt_p_l
-            if min_lambda > max_min_lambda:
-                max_min_lambda = min_lambda
-        return max_min_lambda
 
 
 if __name__ == "__main__":
